@@ -377,8 +377,7 @@ static int init_filters(void)
 
 
         if (ifmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO){
-            filter_spec = "null";
-            //filter_spec = "movie=/home/david/Projects/ffmpeg_samples/resources/images/logo.png,scale=194:152[logo];[in][logo]overlay=30:10[out]"; /* passthrough (dummy) filter for video */
+            filter_spec = "movie=/home/david/Projects/ffmpeg_samples/resources/images/logo.png,scale=194:152[logo];[in][logo]overlay=30:10[out]"; /* passthrough (dummy) filter for video */
         
         // else
         //     filter_spec = "anull"; /* passthrough (dummy) filter for audio */

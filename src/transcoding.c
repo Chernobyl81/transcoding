@@ -1,11 +1,4 @@
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavfilter/buffersink.h>
-#include <libavfilter/buffersrc.h>
-#include <libavutil/opt.h>
-#include <libavutil/pixdesc.h>
-#include <stdio.h>
-#include <unistd.h>
+#include "transcoding.h"
 
 static AVFormatContext *ifmt_ctx;
 static AVFormatContext *ofmt_ctx;
@@ -31,7 +24,6 @@ static StreamContext *stream_ctx;
 static int open_input_file(const char *filename)
 {
     int ret;
-   
     ifmt_ctx = NULL;
     if ((ret = avformat_open_input(&ifmt_ctx, filename, NULL, NULL)) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot open input file\n");
@@ -79,7 +71,6 @@ static int open_input_file(const char *filename)
         }
         
         stream_ctx[i].dec_ctx = codec_ctx;
-
         stream_ctx[i].dec_frame = av_frame_alloc();
         if (!stream_ctx[i].dec_frame)
             return AVERROR(ENOMEM);
@@ -145,9 +136,6 @@ static int open_output_file(const char *filename)
                     enc_ctx->pix_fmt = encoder->pix_fmts[0];
                 else
                     enc_ctx->pix_fmt = dec_ctx->pix_fmt;
-                 
-                /* video time_base can be set to whatever is handy and supported by encoder */
-                // enc_ctx->time_base = av_inv_q(dec_ctx->framerate);
             } else {
                 enc_ctx->sample_rate = dec_ctx->sample_rate;
                 enc_ctx->channel_layout = dec_ctx->channel_layout;
@@ -363,7 +351,7 @@ static void create_filter_spec(char* spec, const size_t spec_size, const char* l
     av_log(NULL, AV_LOG_DEBUG, "filter spec %s", spec);
 }
 
-static int init_filters(void)
+static int init_filters(const char* logo, int x, int y)
 {
     char filter_spec[128] = {};
     int ret;
@@ -381,7 +369,7 @@ static int init_filters(void)
 
 
         if (ifmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO){
-            create_filter_spec(filter_spec, sizeof(filter_spec), "/home/david/Projects/ffmpeg_samples/resources/images/logo.png", 30, 10);
+            create_filter_spec(filter_spec, sizeof(filter_spec), logo, x, y);
             ret = init_filter(&filter_ctx[i], stream_ctx[i].dec_ctx,
                     stream_ctx[i].enc_ctx, filter_spec);
             if (ret)
@@ -407,7 +395,6 @@ static int encode_write_frame(unsigned int stream_index, int flush)
     AVPacket *enc_pkt = filter->enc_pkt;
     int ret;
 
-    av_log(NULL, AV_LOG_INFO, "Encoding frame\n");
     /* encode filtered frame */
     av_packet_unref(enc_pkt);
 
@@ -440,8 +427,7 @@ static int filter_encode_write_frame(AVFrame *frame, unsigned int stream_index)
 {
     FilteringContext *filter = &filter_ctx[stream_index];
     int ret;
-
-    av_log(NULL, AV_LOG_INFO, "Pushing decoded frame to filters\n");
+   
     /* push the decoded frame into the filtergraph */
     ret = av_buffersrc_add_frame_flags(filter->buffersrc_ctx,
             frame, 0);
@@ -452,7 +438,6 @@ static int filter_encode_write_frame(AVFrame *frame, unsigned int stream_index)
 
     /* pull filtered frames from the filtergraph */
     while (1) {
-        av_log(NULL, AV_LOG_INFO, "Pulling filtered frame from filters\n");
         ret = av_buffersink_get_frame(filter->buffersink_ctx,
                                       filter->filtered_frame);
         if (ret < 0) {
@@ -481,31 +466,23 @@ static int flush_encoder(unsigned int stream_index)
                 AV_CODEC_CAP_DELAY))
         return 0;
 
-    av_log(NULL, AV_LOG_INFO, "Flushing stream #%u encoder\n", stream_index);
+    av_log(NULL, AV_LOG_DEBUG, "Flushing stream #%u encoder\n", stream_index);
     return encode_write_frame(stream_index, 1);
 }
 
-int main(int argc, char **argv)
-{
-    av_log_set_level(AV_LOG_DEBUG);
-    // char spec[128] = {};
-    // filter_spec(spec, sizeof(spec), "/home/david/Projects/ffmpeg_samples/resources/images/logo.png", 30, 10);
 
+int filter_video(const char* input_file, const char* output_file, const char* logo, int x, int y)
+{
     int ret;
     AVPacket *packet = NULL;
     unsigned int stream_index;
     unsigned int i;
 
-    if (argc != 3) {
-        av_log(NULL, AV_LOG_ERROR, "Usage: %s <input file> <output file>\n", argv[0]);
-        return 1;
-    }
-
-    if ((ret = open_input_file(argv[1])) < 0)
+    if ((ret = open_input_file(input_file)) < 0)
         goto end;
-    if ((ret = open_output_file(argv[2])) < 0)
+    if ((ret = open_output_file(output_file)) < 0)
         goto end;
-    if ((ret = init_filters()) < 0)
+    if ((ret = init_filters(logo, x, y)) < 0)
         goto end;
     if (!(packet = av_packet_alloc()))
         goto end;
@@ -515,14 +492,10 @@ int main(int argc, char **argv)
     while (1) {
         if ((ret = av_read_frame(ifmt_ctx, packet)) < 0)
             break;
-        stream_index = packet->stream_index;
-        av_log(NULL, AV_LOG_INFO, "Demuxer gave frame of stream_index %u\n",
-                stream_index);
 
+        stream_index = packet->stream_index;
         if (filter_ctx[stream_index].filter_graph) {
             StreamContext *stream = &stream_ctx[stream_index];
-
-            av_log(NULL, AV_LOG_INFO, "Going to reencode&filter the frame with stream index %d\n", stream_index);
 
             av_packet_rescale_ts(packet,
                                  ifmt_ctx->streams[stream_index]->time_base,
@@ -548,7 +521,6 @@ int main(int argc, char **argv)
             }
         } else {
             /* remux this frame without reencoding */
-            av_log(NULL, AV_LOG_INFO, "Going to no filter the frame\n");
             av_packet_rescale_ts(packet,
                                  ifmt_ctx->streams[stream_index]->time_base,
                                  ofmt_ctx->streams[stream_index]->time_base);
@@ -559,8 +531,6 @@ int main(int argc, char **argv)
         }
         av_packet_unref(packet);
     }
-
-    printf("nb_streams %d!\n", ifmt_ctx->nb_streams);
 
     /* flush filters and encoders */
     for (i = 0; i < ifmt_ctx->nb_streams; i++) {

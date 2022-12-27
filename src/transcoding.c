@@ -99,7 +99,6 @@ static int open_output_file(const char *filename)
     AVCodec const *encoder;
     int ret;
     
-
     ofmt_ctx = NULL;
     avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, filename);
     if (!ofmt_ctx) {
@@ -358,16 +357,21 @@ end:
     return ret;
 }
 
+static void create_filter_spec(char* spec, const size_t spec_size, const char* logo, int x, int y)
+{
+    snprintf(spec, spec_size, "movie=%s[logo];[in][logo]overlay=%d:%d[out]\n", logo, x, y);
+    av_log(NULL, AV_LOG_DEBUG, "filter spec %s", spec);
+}
+
 static int init_filters(void)
 {
-    const char *filter_spec;
-    unsigned int i;
+    char filter_spec[128] = {};
     int ret;
     filter_ctx = av_malloc_array(ifmt_ctx->nb_streams, sizeof(*filter_ctx));
     if (!filter_ctx)
         return AVERROR(ENOMEM);
 
-    for (i = 0; i < ifmt_ctx->nb_streams; i++) {
+    for (unsigned int i = 0; i < ifmt_ctx->nb_streams; i++) {
         filter_ctx[i].buffersrc_ctx  = NULL;
         filter_ctx[i].buffersink_ctx = NULL;
         filter_ctx[i].filter_graph   = NULL;
@@ -377,10 +381,7 @@ static int init_filters(void)
 
 
         if (ifmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO){
-            filter_spec = "movie=/home/david/Projects/ffmpeg_samples/resources/images/logo.png,scale=194:152[logo];[in][logo]overlay=30:10[out]"; /* passthrough (dummy) filter for video */
-        
-        // else
-        //     filter_spec = "anull"; /* passthrough (dummy) filter for audio */
+            create_filter_spec(filter_spec, sizeof(filter_spec), "/home/david/Projects/ffmpeg_samples/resources/images/logo.png", 30, 10);
             ret = init_filter(&filter_ctx[i], stream_ctx[i].dec_ctx,
                     stream_ctx[i].enc_ctx, filter_spec);
             if (ret)
@@ -486,6 +487,10 @@ static int flush_encoder(unsigned int stream_index)
 
 int main(int argc, char **argv)
 {
+    av_log_set_level(AV_LOG_DEBUG);
+    // char spec[128] = {};
+    // filter_spec(spec, sizeof(spec), "/home/david/Projects/ffmpeg_samples/resources/images/logo.png", 30, 10);
+
     int ret;
     AVPacket *packet = NULL;
     unsigned int stream_index;
@@ -530,7 +535,6 @@ int main(int argc, char **argv)
             }
 
             while (ret >= 0) {
-                av_log(NULL, AV_LOG_INFO, "loop index is %d\n", stream_index);
                 ret = avcodec_receive_frame(stream->dec_ctx, stream->dec_frame);
                 if (ret == AVERROR_EOF || ret == AVERROR(EAGAIN))
                     break;
@@ -554,7 +558,6 @@ int main(int argc, char **argv)
                 goto end;
         }
         av_packet_unref(packet);
-        // sleep(1);
     }
 
     printf("nb_streams %d!\n", ifmt_ctx->nb_streams);

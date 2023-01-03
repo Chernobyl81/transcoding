@@ -26,13 +26,6 @@ file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
 if(ANDROID_ABI)
     message(STATUS "Building for android ${ANDROID_ABI}")
     include(cmake/cc-android.cmake)
-    # target_include_directories(${PROJECT_NAME} PUBLIC 
-    #     include
-    #     ${CMAKE_CURRENT_BINARY_DIR}/include
-    #     /home/david/sources/android-ndk/android-ndk-r23b/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
-    # )
-else()
-    # target_include_directories(${PROJECT_NAME} PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/include)
 endif()
 
 add_library(${PROJECT_NAME} SHARED ${SRC})
